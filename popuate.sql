@@ -1,7 +1,13 @@
-INSERT INTO PIECETYPES (name)
-    VALUES ('pawn'), ('tower'), ('queen'), ('king'), ('knight'), ('bishop');
+INSERT INTO PIECETYPES (name, white_visual_representation, bloack_visual_representation)
+    VALUES ('pawn', '♙', '♟'), ('rook', '♖', '♜'), ('queen', '♕', '♛'), ('king', '♔', '♚'), ('knight', '♘', '♞'), ('bishop', '♗', '♝');
 
-INSERT INTO MOVES 
-    VALUES (0, 1, FALSE, FALSE),
-    VALUES(0, 1, FALSE, TRUE),
-    VALUES(1, 1, FALSE, TRUE);
+INSERT INTO MOVES (col, row, repeatable, sym) 
+    VALUES  (0, 1, FALSE, FALSE),
+            (0, 1, FALSE, TRUE),
+            (1, 1, FALSE, TRUE),
+            (0, 1, TRUE, TRUE),
+            (1, 1, TRUE, TRUE),
+            (1, 2, FALSE, TRUE),
+            (2, 1, FALSE, TRUE);
+
+INSERT INTO PLAYERS (name) VALUES ('Z');
