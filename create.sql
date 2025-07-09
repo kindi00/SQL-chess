@@ -60,6 +60,37 @@ CREATE TABLE GAMES (
     status   BOOLEAN
 );
 
+CREATE OR REPLACE FUNCTION convert_alpha_to_int(v VARCHAR(1)) RETURNS SMALLINT AS $$
+    BEGIN
+        CASE
+            WHEN v = 'a' THEN RETURN 0;
+            WHEN v = 'b' THEN RETURN 1;
+            WHEN v = 'c' THEN RETURN 2;
+            WHEN v = 'd' THEN RETURN 3;
+            WHEN v = 'e' THEN RETURN 4;
+            WHEN v = 'f' THEN RETURN 5;
+            WHEN v = 'g' THEN RETURN 6;
+            WHEN v = 'h' THEN RETURN 7;
+        END CASE;
+    END;
+$$ LANGUAGE plpgsql;
+
+
+CREATE OR REPLACE FUNCTION convert_int_to_alpha(i INTEGER) RETURNS varchar(1) AS $$
+    BEGIN
+        CASE
+            WHEN i = 0 THEN RETURN 'a';
+            WHEN i = 1 THEN RETURN 'b';
+            WHEN i = 2 THEN RETURN 'c';
+            WHEN i = 3 THEN RETURN 'd';
+            WHEN i = 4 THEN RETURN 'e';
+            WHEN i = 5 THEN RETURN 'f';
+            WHEN i = 6 THEN RETURN 'g';
+            WHEN i = 7 THEN RETURN 'h';
+        END CASE;
+    END;
+$$ LANGUAGE plpgsql;
+
 CREATE OR REPLACE PROCEDURE create_lobby(my_id integer) AS $$
     DECLARE
         board BOARDS.id%TYPE;
@@ -103,7 +134,7 @@ CREATE OR REPLACE PROCEDURE create_lobby(my_id integer) AS $$
                 (piece_id, board, 4, 6, TRUE), (piece_id, board, 5, 6, TRUE),
                 (piece_id, board, 6, 6, TRUE), (piece_id, board, 7, 6, TRUE);
         
-        EXECUTE 'LISTEN lobby_' || board::varchar(10);
+        EXECUTE FORMAT('LISTEN lobby_%s_p1', board::varchar(10));
     END;
 $$ LANGUAGE plpgsql;
 
@@ -115,26 +146,30 @@ $$ LANGUAGE plpgsql;
 
 -- SELECT FLOOR(RANDOM() * 2) AS order <- losuj pierwszeństwo
 
-CREATE OR REPLACE FUNCTION move(col int, row int) RETURNS integer AS $$
+CREATE OR REPLACE FUNCTION convert_position_to_ints(pos varchar(2)) RETURNS
+    TABLE (col SMALLINT,
+           r SMALLINT) AS $$
+    DECLARE
+        arr VARCHAR(1) ARRAY[2];
     BEGIN
-        RETURN 0;
+        SELECT * FROM regexp_split_to_array(pos, '\s*') INTO arr;
+        RETURN QUERY SELECT convert_alpha_to_int(arr[1]) AS col, arr[2]::SMALLINT AS r; 
     END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION convert_int_to_alpha(i INTEGER) RETURNS varchar(1) AS $$
+
+CREATE OR REPLACE PROCEDURE move(board_id integer, _start varchar(2), _end varchar(2)) AS $$
+    DECLARE
+        start_pos   RECORD;
+        end_pos     RECORD;
     BEGIN
-        CASE
-            WHEN i = 0 THEN RETURN 'a';
-            WHEN i = 1 THEN RETURN 'b';
-            WHEN i = 2 THEN RETURN 'c';
-            WHEN i = 3 THEN RETURN 'd';
-            WHEN i = 4 THEN RETURN 'e';
-            WHEN i = 5 THEN RETURN 'f';
-            WHEN i = 6 THEN RETURN 'g';
-            WHEN i = 7 THEN RETURN 'h';
-        END CASE;
+        SELECT * FROM convert_position_to_ints(_start) INTO start_pos;
+        SELECT * FROM convert_position_to_ints(_end) INTO end_pos;
+        EXECUTE FORMAT('UPDATE pieces SET col = %s, row = %s-1 WHERE bid = %s AND col = %s AND row = %s-1',
+                        end_pos.col, end_pos.r, board_id, start_pos.col, start_pos.r);
     END;
 $$ LANGUAGE plpgsql;
+
 
 CREATE OR REPLACE FUNCTION print_board(board_id integer) RETURNS 
     TABLE (id  SMALLINT,
