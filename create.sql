@@ -148,18 +148,20 @@ BEGIN
         UPDATE GAMES SET splayer = my_id WHERE bid = game_id;
         EXECUTE FORMAT('LISTEN lobby_%s_p2', game_id);
         EXECUTE FORMAT('NOTIFY lobby_%s_p1, ''player %s has joined lobby %1$s''', game_id, my_name);
-        -- CALL start_game();
+        CALL start_game(game_id);
     END IF;
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION start_game(game_id integer) RETURNS VARCHAR AS $$
-        BEGIN
-            RETURN 0;
-        END;
+CREATE OR REPLACE PROCEDURE start_game(game_id integer)  AS $$
+    DECLARE
+        first_player    GAMES.turn%TYPE;
+    BEGIN
+        SELECT FLOOR(RANDOM() * 2)::int::boolean INTO first_player;  
+        UPDATE GAMES SET status = TRUE, turn = first_player WHERE bid = game_id;
+        EXECUTE FORMAT('NOTIFY lobby_%s_p%s, ''(Lobby %1$s) It''''s your turn!''', game_id, first_player::int+1);
+    END;
 $$ LANGUAGE plpgsql;
-
--- SELECT FLOOR(RANDOM() * 2) AS order <- losuj pierwszeństwo
 
 CREATE OR REPLACE FUNCTION convert_position_to_ints(pos varchar(2)) RETURNS
     TABLE (col SMALLINT,
