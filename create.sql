@@ -147,19 +147,19 @@ BEGIN
     IF player IS NULL THEN
         UPDATE GAMES SET splayer = my_id WHERE bid = game_id;
         EXECUTE FORMAT('LISTEN lobby_%s_p2', game_id);
-        EXECUTE FORMAT('NOTIFY lobby_%s_p1, ''player %s has joined lobby %1$s''', game_id, my_name);
+        EXECUTE FORMAT('NOTIFY lobby_%s_p1, ''[Lobby %1$s] Player %s has joined the lobby.''', game_id, my_name);
         CALL start_game(game_id);
     END IF;
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE PROCEDURE start_game(game_id integer)  AS $$
+CREATE OR REPLACE PROCEDURE start_game(game_id integer) AS $$
     DECLARE
         first_player    GAMES.turn%TYPE;
     BEGIN
         SELECT FLOOR(RANDOM() * 2)::int::boolean INTO first_player;  
         UPDATE GAMES SET status = TRUE, turn = first_player WHERE bid = game_id;
-        EXECUTE FORMAT('NOTIFY lobby_%s_p%s, ''(Lobby %1$s) It''''s your turn!''', game_id, first_player::int+1);
+        EXECUTE FORMAT('NOTIFY lobby_%s_p%s, ''[Lobby %1$s] It''''s your turn!''', game_id, first_player::int+1);
     END;
 $$ LANGUAGE plpgsql;
 
@@ -175,11 +175,39 @@ CREATE OR REPLACE FUNCTION convert_position_to_ints(pos varchar(2)) RETURNS
 $$ LANGUAGE plpgsql;
 
 
-CREATE OR REPLACE PROCEDURE move(board_id integer, _start varchar(2), _end varchar(2)) AS $$
+CREATE OR REPLACE PROCEDURE move(my_id integer, board_id integer, _start varchar(2), _end varchar(2)) AS $$
+    << outerblock >>
     DECLARE
         start_pos   RECORD;
         end_pos     RECORD;
+        game        GAMES%ROWTYPE;
     BEGIN
+        SELECT * FROM GAMES WHERE bid = board_id INTO game;
+        IF game.fplayer != my_id AND (game.splayer != my_id OR game.splayer IS NULL) THEN
+            RAISE NOTICE '[Lobby %] Move aborted: you are not a player in this lobby.', board_id;
+            EXIT outerblock;
+        ELSIF NOT game.status THEN
+            RAISE NOTICE '[Lobby %] Move aborted: game has not started yet.', board_id;
+            EXIT outerblock;
+        ELSIF NOT game.turn AND game.fplayer != my_id THEN
+            RAISE NOTICE '[Lobby %] Move aborted: it''s not your turn.', board_id;
+            EXIT outerblock;
+        ELSIF game.turn AND game.splayer != my_id THEN
+            RAISE NOTICE '[Lobby %] Move aborted: it''s not your turn.', board_id;
+            EXIT outerblock;
+        END IF;
+        -- TODO
+        -- make sure that it is valid turn order
+        -- make sure that a move is valid
+        -- notify about changes after move
+
+        -- crete array valid moves [pos]
+        -- foreach
+        -- if symm: for i in range 1 + 3*is_sym
+        -- couter := 1
+        -- while not blocked by other piece: insert pos+vector into arr
+        -- if not rep break
+        -- rotate by 90deg (++ -> -+ -> -- -> +-) (01 -> -10 -> 0-1 -> 10) (11 -> -11 -> -1-1 -> 1-1)
         SELECT * FROM convert_position_to_ints(_start) INTO start_pos;
         SELECT * FROM convert_position_to_ints(_end) INTO end_pos;
         EXECUTE FORMAT('UPDATE pieces SET col = %s, row = %s-1 WHERE bid = %s AND col = %s AND row = %s-1',
@@ -188,9 +216,15 @@ CREATE OR REPLACE PROCEDURE move(board_id integer, _start varchar(2), _end varch
     END;
 $$ LANGUAGE plpgsql;
 
+(01 -> -10 -> 0-1 -> 10)
+(11 -> -11 -> -1-1 -> 1-1)
+1. row <-> col, col * -1
+2. row <-> col, col * -1
+3. row <-> col, col * -1
+
 CREATE OR REPLACE FUNCTION notify_turn() RETURNS TRIGGER AS $$
 BEGIN
-    EXECUTE FORMAT('NOTIFY lobby_%s_p%s, ''(Lobby %1$s) It''''s your turn!''', NEW.bid, NEW.turn::int+1);
+    EXECUTE FORMAT('NOTIFY lobby_%s_p%s, ''[Lobby %1$s] It''''s your turn!''', NEW.bid, NEW.turn::int+1);
     RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
