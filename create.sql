@@ -138,6 +138,18 @@ CREATE OR REPLACE PROCEDURE create_lobby(my_id integer) AS $$
     END;
 $$ LANGUAGE plpgsql;
 
+CREATE OR REPLACE PROCEDURE join_lobby(game_id integer, my_id integer) AS $$
+DECLARE
+    player GAMES.splayer%TYPE;
+BEGIN
+    SELECT splayer FROM GAMES WHERE bid = game_id INTO player;
+    IF player IS NULL THEN
+        UPDATE GAMES SET splayer = my_id WHERE bid = game_id;
+        CALL start_game();
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
 CREATE OR REPLACE FUNCTION start_game(game_id integer) RETURNS VARCHAR AS $$
         BEGIN
             RETURN 0;
