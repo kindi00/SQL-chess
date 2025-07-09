@@ -48,8 +48,8 @@ CREATE TABLE PLAYERS (
 );
 
 CREATE TABLE GAMES (
-    -- turn 0/False means it is first player's turn,
-    -- turn 1/True means it is second player's turn,
+    -- turn False means it is first player's turn,
+    -- turn True means it is second player's turn,
     -- status 0 means not started
     -- status 1 means running
     -- status NULL means finished
