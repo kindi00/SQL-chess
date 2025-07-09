@@ -184,8 +184,21 @@ CREATE OR REPLACE PROCEDURE move(board_id integer, _start varchar(2), _end varch
         SELECT * FROM convert_position_to_ints(_end) INTO end_pos;
         EXECUTE FORMAT('UPDATE pieces SET col = %s, row = %s-1 WHERE bid = %s AND col = %s AND row = %s-1',
                         end_pos.col, end_pos.r, board_id, start_pos.col, start_pos.r);
+        UPDATE GAMES SET turn = NOT turn WHERE bid = board_id;
     END;
 $$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION notify_turn() RETURNS TRIGGER AS $$
+BEGIN
+    EXECUTE FORMAT('NOTIFY lobby_%s_p%s, ''(Lobby %1$s) It''''s your turn!''', NEW.bid, NEW.turn::int+1);
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE TRIGGER turn_change AFTER UPDATE ON GAMES
+    FOR EACH ROW
+    WHEN (OLD.turn != NEW.turn)
+    EXECUTE FUNCTION notify_turn();
 
 
 CREATE OR REPLACE FUNCTION print_board(board_id integer) RETURNS 
