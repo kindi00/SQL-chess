@@ -147,7 +147,6 @@ CREATE OR REPLACE FUNCTION print_board(board_id integer) RETURNS
             g   VARCHAR(1),
             h   VARCHAR(1)) AS $$
     DECLARE
-        -- aff PIECES.affiliation%TYPE;
         piece   PIECES%ROWTYPE;
         col     VARCHAR(1);
         symbol  VARCHAR(1);
