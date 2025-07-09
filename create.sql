@@ -14,6 +14,8 @@ CREATE TABLE BOARDS (
 );
 
 CREATE TABLE PIECES (
+    -- affiliation FALSE means white or first player
+    -- affiliation TRUE means black or second player
     id      SMALLINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
     tid     SMALLINT REFERENCES PIECETYPES(id),
     bid     SMALLINT REFERENCES BOARDS(id),
@@ -67,7 +69,7 @@ CREATE OR REPLACE PROCEDURE create_lobby(my_id integer) AS $$
         INSERT INTO GAMES (bid, fplayer, splayer, turn, status)
             VALUES (board, my_id, NULL, FALSE, FALSE);
 
-            SELECT id FROM PIECETYPES WHERE name = 'tower' INTO piece_id;
+            SELECT id FROM PIECETYPES WHERE name = 'rook' INTO piece_id;
             INSERT INTO PIECES (tid, bid, col, row, affiliation) VALUES 
                 (piece_id, board, 0, 0, FALSE), (piece_id, board, 7, 0, FALSE), 
                 (piece_id, board, 0, 7, TRUE), (piece_id, board, 7, 7, TRUE);
@@ -114,14 +116,77 @@ $$ LANGUAGE plpgsql;
 -- SELECT FLOOR(RANDOM() * 2) AS order <- losuj pierwszeństwo
 
 CREATE OR REPLACE FUNCTION move(col int, row int) RETURNS integer AS $$
-        BEGIN
-                RETURN 0;
-        END;
+    BEGIN
+        RETURN 0;
+    END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION print_board() RETURNS varchar AS $$
-        BEGIN
-                RETURN '0';
-        END;
+CREATE OR REPLACE FUNCTION convert_int_to_alpha(i INTEGER) RETURNS varchar(1) AS $$
+    BEGIN
+        CASE
+            WHEN i = 0 THEN RETURN 'a';
+            WHEN i = 1 THEN RETURN 'b';
+            WHEN i = 2 THEN RETURN 'c';
+            WHEN i = 3 THEN RETURN 'd';
+            WHEN i = 4 THEN RETURN 'e';
+            WHEN i = 5 THEN RETURN 'f';
+            WHEN i = 6 THEN RETURN 'g';
+            WHEN i = 7 THEN RETURN 'h';
+        END CASE;
+    END;
 $$ LANGUAGE plpgsql;
 
+CREATE OR REPLACE FUNCTION print_board(board_id integer) RETURNS 
+    TABLE (id  SMALLINT,
+            a   VARCHAR(1),
+            b   VARCHAR(1),
+            c   VARCHAR(1),
+            d   VARCHAR(1),
+            e   VARCHAR(1),
+            f   VARCHAR(1),
+            g   VARCHAR(1),
+            h   VARCHAR(1)) AS $$
+    DECLARE
+        -- aff PIECES.affiliation%TYPE;
+        piece   PIECES%ROWTYPE;
+        col     VARCHAR(1);
+        symbol  VARCHAR(1);
+    BEGIN
+        CREATE TEMPORARY TABLE pboard (
+            id  SMALLINT PRIMARY KEY,
+            a   VARCHAR(1),
+            b   VARCHAR(1),
+            c   VARCHAR(1),
+            d   VARCHAR(1),
+            e   VARCHAR(1),
+            f   VARCHAR(1),
+            g   VARCHAR(1),
+            h   VARCHAR(1)
+        );
+        INSERT into pboard VALUES 
+            (8, '□', '■', '□', '■', '□', '■', '□', '■'),
+            (7, '■', '□', '■', '□', '■', '□', '■', '□'),
+            (6, '□', '■', '□', '■', '□', '■', '□', '■'),
+            (5, '■', '□', '■', '□', '■', '□', '■', '□'),
+            (4, '□', '■', '□', '■', '□', '■', '□', '■'),
+            (3, '■', '□', '■', '□', '■', '□', '■', '□'),
+            (2, '□', '■', '□', '■', '□', '■', '□', '■'),
+            (1, '■', '□', '■', '□', '■', '□', '■', '□');
+        FOR piece IN
+            SELECT *
+                FROM PIECES
+                WHERE bid = board_id
+        LOOP
+            IF piece.affiliation THEN
+                SELECT bloack_visual_representation FROM PIECETYPES pt WHERE pt.id = piece.tid INTO symbol;
+            ELSE
+                SELECT white_visual_representation FROM PIECETYPES pt WHERE pt.id = piece.tid INTO symbol;
+            END IF;
+            SELECT * FROM convert_int_to_alpha(piece.col) INTO col;
+            EXECUTE FORMAT('UPDATE pboard SET %s = ''%s'' WHERE id = 1+%s', col, symbol, piece.row);
+        END LOOP;
+        RETURN QUERY
+            SELECT * FROM pboard ORDER BY id DESC;
+        DROP TABLE pboard;
+    END;
+$$ LANGUAGE plpgsql;
