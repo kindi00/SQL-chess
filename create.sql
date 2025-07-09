@@ -133,19 +133,22 @@ CREATE OR REPLACE PROCEDURE create_lobby(my_id integer) AS $$
                 (piece_id, board, 2, 6, TRUE), (piece_id, board, 3, 6, TRUE),
                 (piece_id, board, 4, 6, TRUE), (piece_id, board, 5, 6, TRUE),
                 (piece_id, board, 6, 6, TRUE), (piece_id, board, 7, 6, TRUE);
-        
-        EXECUTE FORMAT('LISTEN lobby_%s_p1', board::varchar(10));
+        EXECUTE FORMAT('LISTEN lobby_%s_p1', board);
     END;
 $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE PROCEDURE join_lobby(game_id integer, my_id integer) AS $$
 DECLARE
-    player GAMES.splayer%TYPE;
+    player  GAMES.splayer%TYPE;
+    my_name    PLAYERS.name%TYPE;
 BEGIN
     SELECT splayer FROM GAMES WHERE bid = game_id INTO player;
+    SELECT name FROM PLAYERS WHERE id = my_id INTO my_name;
     IF player IS NULL THEN
         UPDATE GAMES SET splayer = my_id WHERE bid = game_id;
-        CALL start_game();
+        EXECUTE FORMAT('LISTEN lobby_%s_p2', game_id);
+        EXECUTE FORMAT('NOTIFY lobby_%s_p1, ''player %s has joined lobby %1$s''', game_id, my_name);
+        -- CALL start_game();
     END IF;
 END;
 $$ LANGUAGE plpgsql;
