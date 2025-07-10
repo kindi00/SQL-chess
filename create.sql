@@ -159,6 +159,8 @@ CREATE OR REPLACE PROCEDURE start_game(game_id integer) AS $$
     BEGIN
         SELECT FLOOR(RANDOM() * 2)::int::boolean INTO first_player;  
         UPDATE GAMES SET status = TRUE, turn = first_player WHERE bid = game_id;
+        EXECUTE FORMAT('NOTIFY lobby_%s_p1, ''[Lobby %1$s] You have white pieces.''', game_id);
+        EXECUTE FORMAT('NOTIFY lobby_%s_p2, ''[Lobby %1$s] You have black pieces.''', game_id);
         EXECUTE FORMAT('NOTIFY lobby_%s_p%s, ''[Lobby %1$s] It''''s your turn!''', game_id, first_player::int+1);
     END;
 $$ LANGUAGE plpgsql;
@@ -170,7 +172,7 @@ CREATE OR REPLACE FUNCTION convert_position_to_ints(pos varchar(2)) RETURNS
         arr VARCHAR(1) ARRAY[2];
     BEGIN
         SELECT * FROM regexp_split_to_array(pos, '\s*') INTO arr;
-        RETURN QUERY SELECT convert_alpha_to_int(arr[1]) AS col, arr[2]::SMALLINT AS r; 
+        RETURN QUERY SELECT convert_alpha_to_int(arr[1]) AS col, (arr[2]::int-1)::SMALLINT AS r; 
     END;
 $$ LANGUAGE plpgsql;
 
@@ -181,8 +183,16 @@ CREATE OR REPLACE PROCEDURE move(my_id integer, board_id integer, _start varchar
         start_pos   RECORD;
         end_pos     RECORD;
         game        GAMES%ROWTYPE;
+        move        MOVES%ROWTYPE;
+        counter     INTEGER :=  1;
+        loop_check  BOOLEAN :=  TRUE;
+        r           INTEGER;
+        col         INTEGER;
+        tmp         INTEGER;
     BEGIN
         SELECT * FROM GAMES WHERE bid = board_id INTO game;
+        SELECT * FROM convert_position_to_ints(_start) INTO start_pos;
+        SELECT * FROM convert_position_to_ints(_end) INTO end_pos;
         IF game.fplayer != my_id AND (game.splayer != my_id OR game.splayer IS NULL) THEN
             RAISE NOTICE '[Lobby %] Move aborted: you are not a player in this lobby.', board_id;
             EXIT outerblock;
@@ -195,32 +205,58 @@ CREATE OR REPLACE PROCEDURE move(my_id integer, board_id integer, _start varchar
         ELSIF game.turn AND game.splayer != my_id THEN
             RAISE NOTICE '[Lobby %] Move aborted: it''s not your turn.', board_id;
             EXIT outerblock;
+        ELSIF NOT EXISTS (SELECT * FROM PIECES p WHERE p.col = start_pos.col AND p.row = start_pos.r AND p.bid = board_id) THEN
+            RAISE NOTICE '[Lobby %] Move aborted: there is no piece to move.', board_id;
+            EXIT outerblock;
+        ELSIF EXISTS (SELECT * FROM PIECES p WHERE p.col = start_pos.col AND p.row = start_pos.r AND p.bid = board_id AND p.affiliation = (my_id = game.fplayer)) THEN
+            RAISE NOTICE '[Lobby %] Move aborted: this piece does not belong to you!', board_id;
+            EXIT outerblock;
         END IF;
         -- TODO
-        -- make sure that it is valid turn order
         -- make sure that a move is valid
         -- notify about changes after move
-
-        -- crete array valid moves [pos]
-        -- foreach
-        -- if symm: for i in range 1 + 3*is_sym
-        -- couter := 1
-        -- while not blocked by other piece: insert pos+vector into arr
-        -- if not rep break
-        -- rotate by 90deg (++ -> -+ -> -- -> +-) (01 -> -10 -> 0-1 -> 10) (11 -> -11 -> -1-1 -> 1-1)
-        SELECT * FROM convert_position_to_ints(_start) INTO start_pos;
-        SELECT * FROM convert_position_to_ints(_end) INTO end_pos;
-        EXECUTE FORMAT('UPDATE pieces SET col = %s, row = %s-1 WHERE bid = %s AND col = %s AND row = %s-1',
-                        end_pos.col, end_pos.r, board_id, start_pos.col, start_pos.r);
-        UPDATE GAMES SET turn = NOT turn WHERE bid = board_id;
+        CREATE TEMPORARY TABLE TMP (v VARCHAR(2)); 
+        FOR move IN
+            SELECT m.id, m.col, m.row, m.repeatable, m.sym
+            FROM MOVES m
+            INNER JOIN AVAILABLEMOVES am ON m.id = am.mid
+            INNER JOIN PIECETYPES pt ON am.ptid = pt.id
+            INNER JOIN PIECES p ON p.tid = pt.id
+            WHERE p.col = start_pos.col AND p.row = start_pos.r AND p.bid = board_id
+        LOOP
+            FOR i IN 1..(1 + 3 * move.sym::int) LOOP
+                loop_check := TRUE;
+                counter := 1;
+                WHILE loop_check LOOP
+                    RAISE NOTICE 'MC% MR% C%', move.col, move.row, counter;
+                    INSERT INTO TMP VALUES (FORMAT('%s%s', convert_int_to_alpha(start_pos.col + move.col * counter), start_pos.r + move.row * counter + 1));
+                    IF NOT move.repeatable OR
+                        EXISTS (SELECT * FROM PIECES p WHERE p.col = start_pos.col + move.col * counter AND p.row = start_pos.r + move.row * counter) OR 
+                        EXISTS (SELECT * FROM PIECES p1 INNER JOIN PIECES p2 ON p1.bid = p2.bid
+                            WHERE p1.col = start_pos.col + move.col * (counter + 1) AND p1.row = start_pos.r + move.row * (counter + 1) AND p1.affiliation != p2.affiliation AND
+                            p2.col = end_pos.col AND p2.row = end_pos.r) THEN
+                        SELECT FALSE INTO loop_check;
+                    END IF;
+                    tmp := col;
+                    col := -1 * r;
+                    r   := tmp;
+                    counter := counter + 1;
+                END LOOP;
+            END LOOP;
+            IF EXISTS (SELECT * FROM TMP WHERE v = _end) THEN
+                EXECUTE FORMAT('DELETE FROM pieces WHERE bid = %s AND col = %s AND row = %s',
+                                 board_id, end_pos.col, end_pos.r);
+                EXECUTE FORMAT('UPDATE pieces SET col = %s, row = %s WHERE bid = %s AND col = %s AND row = %s',
+                                end_pos.col, end_pos.r, board_id, start_pos.col, start_pos.r);
+                UPDATE GAMES SET turn = NOT turn WHERE bid = board_id;
+            ELSE
+                EXECUTE FORMAT('NOTIFY lobby_%s_p%s, ''[Lobby %1$s] Move aborted: invalid move.''', board_id, my_id);
+            END IF;
+        END LOOP;
+        DROP TABLE TMP;
     END;
 $$ LANGUAGE plpgsql;
 
-(01 -> -10 -> 0-1 -> 10)
-(11 -> -11 -> -1-1 -> 1-1)
-1. row <-> col, col * -1
-2. row <-> col, col * -1
-3. row <-> col, col * -1
 
 CREATE OR REPLACE FUNCTION notify_turn() RETURNS TRIGGER AS $$
 BEGIN
